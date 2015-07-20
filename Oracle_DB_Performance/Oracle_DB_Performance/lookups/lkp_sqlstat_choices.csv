@@ -1,0 +1,25 @@
+statname,statvalue
+number of executions,executions
+parse calls,parse_calls
+disk reads,disk_reads
+direct writes,direct_writes
+rows returned,rows_processed
+buffer gets,buffer_gets
+loads,loads
+version count,version_count
+invalidations,invalidations
+parallel executions,ps_servers_executions
+cpu_time,cpu_time
+elapsed time,elapsed_time
+avg hard parse time,avg_hard_parse_time
+cluster wait time,cluster_wait_time
+application wait time,application_wait_time
+concurrency wait time,concurrency_wait_time
+io wait time,user_io_wait_time
+plsql execution time,plsql_exec_time
+java execution time,java_exec_time
+sorts,sorts
+sharable memory,sharable_mem
+interconnect bytes,io_interconnect_bytes
+physical reads,physical_read_requests
+physical writes,physical_write_requests

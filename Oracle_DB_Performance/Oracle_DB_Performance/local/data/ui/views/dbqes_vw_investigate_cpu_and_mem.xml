@@ -1,0 +1,1426 @@
+<form>
+  <label>Investigate CPU And Memory</label>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="dropdown" submitButton="false" token="host_" searchWhenChanged="true">
+      <label>Select an environment</label>
+      <default>Pick an Environment</default>
+      <populatingSearch fieldForLabel="environment" fieldForValue="host">
+        <![CDATA[| inputlookup dbqes_lkp_host_dbname.csv ]]>
+      </populatingSearch>
+      <change>
+        <condition label="COM Prod">
+          <set token="dbname_">DA1000</set>
+          <set token="p1_display">true</set>
+          <set token="p2_display">true</set>
+          <set token="p3_display">true</set>
+          <set token="p4_display">true</set>
+          <set token="p5_display">true</set>
+          <set token="p6_display">true</set>
+          <set token="p7_display">true</set>
+          <set token="p8_display">true</set>
+          <set token="p9_display">true</set>
+          <set token="p10_display">true</set>
+          <set token="p11_display">true</set>
+          <set token="p13_display">true</set>
+        </condition>
+      </change>
+    </input>
+    <input type="time" searchWhenChanged="true" token="t1">
+      <label>Pick a time range</label>
+      <default>
+        <earliestTime>-1h@h</earliestTime>
+        <latestTime>now</latestTime>
+      </default>
+    </input>
+    <input type="time" searchWhenChanged="true" token="t2">
+      <label>Pick a time range for Baselines</label>
+      <default>
+        <earliestTime>-1h@h</earliestTime>
+        <latestTime>now</latestTime>
+      </default>
+    </input>
+  </fieldset>
+  <row>
+    <html>
+      <p>Note:  This page brings together host cpu and memory stats plus Oracle sga/pga stats.
+      </p>
+     </html>
+  </row>
+  <row>
+    <panel depends="$p4_display$">
+      <table>
+        <title>Host Instance Map $host_$ $dbname_$</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat extracted_host=$host_$           |multikv         |fields extracted_host         |lookup lkp_dbd_instance_id2.csv source_host as extracted_host,          OUTPUT instances as instances, source_host as hostx          | where  hostx="$host_$"         | dedup instances         | table instances</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">cell</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <table>
+      <title>Host CPU And RAM Resources - What $dbname_$ Sees</title>
+      <search>
+        <query>index=database sourcetype=om:oracle:osstat dbname=$dbname_$ |  fields PHYSICAL_MEMORY_BYTES,          instance_id, NUM_CPUS, NUM_CPU_CORES, NUM_CPU_SOCKETS  , dbname         | stats last(eval(PHYSICAL_MEMORY_BYTES/(1024*1024*1024))) as GB_RAM  last(NUM_CPUS)  as "Num CPUs"          last(NUM_CPU_CORES) as "CPU CORES" last(NUM_CPU_SOCKETS) as "CPU Sockets"  by instance_id | eval GB_RAM=round(GB_RAM,0)</query>
+        <earliest>$t1.earliest$</earliest>
+        <latest>$t1.latest$</latest>
+      </search>
+      <option name="wrap">true</option>
+      <option name="rowNumbers">false</option>
+      <option name="dataOverlayMode">none</option>
+      <option name="drilldown">row</option>
+      <option name="count">10</option>
+    </table>
+  </row>
+  <row>
+    <table>
+      <searchString>index=database sourcetype=om:oracle:sysstat | head 1 | addinfo | convert ctime(info_min_time) | convert ctime(info_max_time) 
+       | eval BaselineTimerange=info_min_time." to ".info_max_time | head 1 |  table BaselineTimerange</searchString>
+      <earliestTime>$t2.earliest$</earliestTime>
+      <latestTime>$t2.latest$</latestTime>
+    </table>
+    <table>
+      <searchString>index=database sourcetype=om:oracle:sysstat | head 1 |  addinfo | convert ctime(info_min_time) | convert ctime(info_max_time) 
+       | eval TargetTimerange=info_min_time." to ".info_max_time  | table TargetTimerange</searchString>
+      <earliestTime>$t1.earliest$</earliestTime>
+      <latestTime>$t1.latest$</latestTime>
+    </table>
+  </row>
+  <row>
+    <html>
+      <h1>CPU Statistics</h1>
+      <p>
+      These CPU stats are taken from the Splunk unix_metrics index and are sampled every 10 minutes.
+      </p>
+    <p>
+      Tip: CPU Load Average greater than the number of cpu CORES means processes are beginning to wait for cpu time.
+      Performance begins to degrade.  On RAC systems cpu load should not go over 1 x # of cores or spike to 100% 
+      utilization for more than a second or two because if the css daemon doesn't get to the cpu in time 
+      (generally 30 seconds) then the "I'm alive" ping doesn't happen and
+      the other nodes will shutdown the "absent" node.
+      </p>
+      </html>
+  </row>
+  <row>
+    <panel depends="$p1_display$">
+      <chart>
+        <title>BASELINE: CPU Pct Breakdown Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv |where CPU="all"         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait         | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         |where CPU="all" AND hostx="$host_$" AND instance_id=1         | timechart avg(pctUser), avg(pctIdle), avg(pctSystem), avg(pctIowait) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>CPU Pct Breakdown Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv |where CPU="all"         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait         | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         |where CPU="all" AND hostx="$host_$" AND instance_id=1         | timechart avg(pctUser), avg(pctIdle), avg(pctSystem), avg(pctIowait) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: CPU Load Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat          | multikv | fields extracted_host, loadAvg1mi          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" AND instance_id=1         | timechart avg(loadAvg1mi) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>CPU Load Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat          | multikv | fields extracted_host, loadAvg1mi          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" AND instance_id=1         | timechart avg(loadAvg1mi) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p2_display$">
+      <chart>
+        <title>BASELINE: CPU Pct Breakdown Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv |where CPU="all"         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         |where CPU="all" AND hostx="$host_$" AND instance_id=2         | timechart avg(pctUser), avg(pctIdle), avg(pctSystem), avg(pctIowait) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>CPU Pct Breakdown Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv |where CPU="all"         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         |where CPU="all" AND hostx="$host_$" AND instance_id=2         | timechart avg(pctUser), avg(pctIdle), avg(pctSystem), avg(pctIowait) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: CPU Load Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat          | multikv | fields extracted_host, loadAvg1mi          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" AND instance_id=2         | timechart avg(loadAvg1mi) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>CPU Load Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat          | multikv | fields extracted_host, loadAvg1mi          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" AND instance_id=2         | timechart avg(loadAvg1mi) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p3_display$">
+      <chart>
+        <title>BASELINE: CPU Pct Breakdown Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv |where CPU="all"         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         |where CPU="all" AND hostx="$host_$" AND instance_id=3         | timechart avg(pctUser), avg(pctIdle), avg(pctSystem), avg(pctIowait) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>CPU Pct Breakdown Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv |where CPU="all"         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         |where CPU="all" AND hostx="$host_$" AND instance_id=3         | timechart avg(pctUser), avg(pctIdle), avg(pctSystem), avg(pctIowait) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: CPU Load Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat          | multikv | fields extracted_host, loadAvg1mi          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" AND instance_id=3         | timechart avg(loadAvg1mi) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>CPU Load Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat          | multikv | fields extracted_host, loadAvg1mi          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" AND instance_id=3         | timechart avg(loadAvg1mi) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">cpu_pct</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <chart>
+      <title>Context Switches and Interrupts (All Instances)</title>
+      <search>
+        <query>index=unix_metrics sourcetype=vmstat        | multikv | fields extracted_host, cSwitches, interrupts, _time         | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx        | where hostx="$host_$" AND (instance_id=1 OR instance_id=2 OR instance_id=3)        | bucket _time span=5m as interval          | stats earliest(cSwitches) as contextSw1 latest(cSwitches) as contextSw2          earliest(interrupts) as interrupt1 latest(interrupts) as interrupt2 by interval          | stats avg(eval(('contextSw2'-'contextSw1')/(5*60))) as ContextSwitchesPerSec          avg(eval(('interrupt2'-'interrupt1')/(5*60))) as InterruptsPerSecond by interval         | chart max(ContextSwitchesPerSec) as ContextSwitchPerSec max(InterruptsPerSecond) as InterruptPerSec          by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval ContextSwitchPerSec=round(ContextSwitchPerSec,0)         | eval InterruptPerSec=round(InterruptPerSec,0)</query>
+        <earliest>$t2.earliest$</earliest>
+        <latest>$t2.latest$</latest>
+      </search>
+      <option name="charting.axisTitleX.visibility">visible</option>
+      <option name="charting.axisTitleY.text">inv_context_switch</option>
+      <option name="charting.axisTitleY.visibility">visible</option>
+      <option name="charting.axisX.scale">linear</option>
+      <option name="charting.axisY.scale">linear</option>
+      <option name="charting.chart">line</option>
+      <option name="charting.chart.nullValueMode">connect</option>
+      <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+      <option name="charting.chart.stackMode">default</option>
+      <option name="charting.chart.style">shiny</option>
+      <option name="charting.drilldown">all</option>
+      <option name="charting.layout.splitSeries">0</option>
+      <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+      <option name="charting.legend.placement">bottom</option>
+      <option name="dataOverlayMode">none</option>
+      <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+      <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+      <option name="charting.axisTitleY2.visibility">visible</option>
+      <option name="charting.axisY2.enabled">false</option>
+      <option name="charting.axisY2.scale">inherit</option>
+      <option name="charting.chart.bubbleMaximumSize">50</option>
+      <option name="charting.chart.bubbleMinimumSize">10</option>
+      <option name="charting.chart.bubbleSizeBy">area</option>
+    </chart>
+    <chart>
+      <title>Context Switches and Interrupts (All Instances)</title>
+      <search>
+        <query>index=unix_metrics sourcetype=vmstat        | multikv | fields extracted_host, cSwitches, interrupts, _time         | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx        | where hostx="$host_$" AND (instance_id=1 OR instance_id=2 OR instance_id=3)        | bucket _time span=5m as interval          | stats earliest(cSwitches) as contextSw1 latest(cSwitches) as contextSw2          earliest(interrupts) as interrupt1 latest(interrupts) as interrupt2 by interval          | stats avg(eval(('contextSw2'-'contextSw1')/(5*60))) as ContextSwitchesPerSec          avg(eval(('interrupt2'-'interrupt1')/(5*60))) as InterruptsPerSecond by interval         | chart max(ContextSwitchesPerSec) as ContextSwitchPerSec max(InterruptsPerSecond) as InterruptPerSec          by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval ContextSwitchPerSec=round(ContextSwitchPerSec,0)         | eval InterruptPerSec=round(InterruptPerSec)</query>
+        <earliest>$t1.earliest$</earliest>
+        <latest>$t1.latest$</latest>
+      </search>
+      <option name="charting.axisTitleX.visibility">visible</option>
+      <option name="charting.axisTitleY.text">inv_context_switch</option>
+      <option name="charting.axisTitleY.visibility">visible</option>
+      <option name="charting.axisX.scale">linear</option>
+      <option name="charting.axisY.scale">linear</option>
+      <option name="charting.chart">line</option>
+      <option name="charting.chart.nullValueMode">connect</option>
+      <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+      <option name="charting.chart.stackMode">default</option>
+      <option name="charting.chart.style">shiny</option>
+      <option name="charting.drilldown">all</option>
+      <option name="charting.layout.splitSeries">0</option>
+      <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+      <option name="charting.legend.placement">bottom</option>
+      <option name="dataOverlayMode">none</option>
+      <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+      <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+      <option name="charting.axisTitleY2.visibility">visible</option>
+      <option name="charting.axisY2.enabled">false</option>
+      <option name="charting.axisY2.scale">inherit</option>
+      <option name="charting.chart.bubbleMaximumSize">50</option>
+      <option name="charting.chart.bubbleMinimumSize">10</option>
+      <option name="charting.chart.bubbleSizeBy">area</option>
+    </chart>
+  </row>
+  <row>
+    <html>
+      <h1>Memory Statistics</h1>
+      <p>
+      TheseMemory stats are taken from the Splunk unix_metrics index.
+      </p>
+    <p>
+      Tip: On Linux swapping (moving out entire processes to virtual memory) generally doesn't occur, but 
+      even if swapping reports 0, if swap used pct is greater than about 75%
+      while there is a sustained high rate of pageouts, then there is high pressure on memory 
+      and performance is suffering.  Linux will begin killing processes.
+     </p>
+     <p>
+      Tip:  On Solaris, swapping out entire processes to VM does occur and indicates 
+        memory shortage and performance degradation.  Even with no swapping, a high percent of swap
+        utilization and sustained high pageouts indicates memory pressure and performance degradation. 
+     </p>
+    </html>
+  </row>
+  <row>
+    <panel depends="$p8_display$">
+      <chart>
+        <title>BASELINE: RAM Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, memFreeMB, memUsedMB          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         |timechart avg(eval(100*(memFreeMB/(memFreeMB+memUsedMB)))) as Free_memory,            avg(eval(100*(memUsedMB/(memFreeMB+memUsedMB)))) as Used_memory by instance         | eval Free_memory=round(Free_memory,1)         | eval Used_memory=round(Used_memory,1)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">ram_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>RAM Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, memFreeMB, memUsedMB          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         |timechart avg(eval(100*(memFreeMB/(memFreeMB+memUsedMB)))) as Free_memory,            avg(eval(100*(memUsedMB/(memFreeMB+memUsedMB)))) as Used_memory by instance         | eval Free_memory=round(Free_memory,1)         | eval Used_memory=round(Used_memory,1)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">ram_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: SWAP Utilization Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, swapUsedPct          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         |timechart max(swapUsedPct) as swap_used</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">swap_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>SWAP Utilization Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, swapUsedPct          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         |timechart max(swapUsedPct) as swap_used</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">swap_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: Page Outs and Swap Outs Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, pgPageOut, pgSwapOut          | eval dbname=$dbname_$         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         | bucket _time span=5m as interval         | stats earliest(pgPageOut) as pgout1 latest(pgPageOut) as pgout2 earliest(pgSwapOut) as pgswap1           latest(pgSwapOut) as pgswap2 by interval         | stats avg(eval(('pgout2'-'pgout1')/(5*60))) as poutPerSec            avg(eval(('pgswap2'-'pgswap1')/(5*60))) as swapPerSec by interval         |chart max(poutPerSec) as PageOutsPerSec             max(swapPerSec) as SwapOutsPerSec by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval PageOutsPerSec=round(PageOutsPerSec,0)         | eval SwapOutsPerSec=round(SwapOutsPerSec,0)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Paging and Swapping</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">10</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>Page Outs and Swap Outs Instance 1</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, pgPageOut, pgSwapOut          | eval dbname=$dbname_$         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         | bucket _time span=5m as interval         | stats earliest(pgPageOut) as pgout1 latest(pgPageOut) as pgout2 earliest(pgSwapOut) as pgswap1           latest(pgSwapOut) as pgswap2 by interval         | stats avg(eval(('pgout2'-'pgout1')/(5*60))) as poutPerSec            avg(eval(('pgswap2'-'pgswap1')/(5*60))) as swapPerSec by interval         |chart max(poutPerSec) as PageOutsPerSec             max(swapPerSec) as SwapOutsPerSec by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval PageOutsPerSec=round(PageOutsPerSec,0)         | eval SwapOutsPerSec=round(SwapOutsPerSec,0)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Paging and Swapping</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">10</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p7_display$">
+      <chart>
+        <title>BASELINE: RAM Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, memFreeMB, memUsedMB          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=2         |timechart avg(eval(100*(memFreeMB/(memFreeMB+memUsedMB)))) as Free_memory,            avg(eval(100*(memUsedMB/(memFreeMB+memUsedMB)))) as Used_memory by instance         | eval Free_memory=round(Free_memory,1)         | eval Used_memory=round(Used_memory,1)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">ram_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>RAM Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, memFreeMB, memUsedMB          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=2         |timechart avg(eval(100*(memFreeMB/(memFreeMB+memUsedMB)))) as Free_memory,            avg(eval(100*(memUsedMB/(memFreeMB+memUsedMB)))) as Used_memory by instance         | eval Free_memory=round(Free_memory,1)         | eval Used_memory=round(Used_memory,1)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">ram_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: SWAP Utilization Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, swapUsedPct          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=2         |timechart max(swapUsedPct) as swap_used</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">swap_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>SWAP Utilization Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, swapUsedPct          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=2         |timechart max(swapUsedPct) as swap_used</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">swap_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE:  Page Outs and Swap Outs Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, pgPageOut, pgSwapOut          | eval dbname=$dbname_$         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         | bucket _time span=5m as interval         | stats earliest(pgPageOut) as pgout1 latest(pgPageOut) as pgout2 earliest(pgSwapOut) as pgswap1           latest(pgSwapOut) as pgswap2 by interval         | stats avg(eval(('pgout2'-'pgout1')/(5*60))) as poutPerSec            avg(eval(('pgswap2'-'pgswap1')/(5*60))) as swapPerSec by interval         |chart max(poutPerSec) as PageOutsPerSec             max(swapPerSec) as SwapOutsPerSec by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval PageOutsPerSec=round(PageOutsPerSec,0)         | eval SwapOutsPerSec=round(SwapOutsPerSec,0)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Paging and Swapping</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">10</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>Page Outs and Swap Outs Instance 2</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, pgPageOut, pgSwapOut          | eval dbname=$dbname_$         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         | bucket _time span=5m as interval         | stats earliest(pgPageOut) as pgout1 latest(pgPageOut) as pgout2 earliest(pgSwapOut) as pgswap1           latest(pgSwapOut) as pgswap2 by interval         | stats avg(eval(('pgout2'-'pgout1')/(5*60))) as poutPerSec            avg(eval(('pgswap2'-'pgswap1')/(5*60))) as swapPerSec by interval         |chart max(poutPerSec) as PageOutsPerSec             max(swapPerSec) as SwapOutsPerSec by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval PageOutsPerSec=round(PageOutsPerSec,0)         | eval SwapOutsPerSec=round(SwapOutsPerSec,0)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Paging and Swapping</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">10</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p13_display$">
+      <chart>
+        <title>BASELINE: RAM Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, memFreeMB, memUsedMB          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=3         |timechart avg(eval(100*(memFreeMB/(memFreeMB+memUsedMB)))) as Free_memory,            avg(eval(100*(memUsedMB/(memFreeMB+memUsedMB)))) as Used_memory by instance         | eval Free_memory=round(Free_memory,1)         | eval Used_memory=round(Used_memory,1)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">ram_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>RAM Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, memFreeMB, memUsedMB          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=3         |timechart avg(eval(100*(memFreeMB/(memFreeMB+memUsedMB)))) as Free_memory,            avg(eval(100*(memUsedMB/(memFreeMB+memUsedMB)))) as Used_memory by instance         | eval Free_memory=round(Free_memory,1)         | eval Used_memory=round(Used_memory,1)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">ram_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked100</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: SWAP Utilization Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, swapUsedPct          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=3         |timechart max(swapUsedPct) as swap_used</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">swap_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>SWAP Utilization Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, swapUsedPct          | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=3         |timechart max(swapUsedPct) as swap_used</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">swap_pct_used</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>BASELINE: Page Outs and Swap Outs Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, pgPageOut, pgSwapOut          | eval dbname=$dbname_$         | lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,            OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         | bucket _time span=5m as interval         | stats earliest(pgPageOut) as pgout1 latest(pgPageOut) as pgout2 earliest(pgSwapOut) as pgswap1           latest(pgSwapOut) as pgswap2 by interval         | stats avg(eval(('pgout2'-'pgout1')/(5*60))) as poutPerSec            avg(eval(('pgswap2'-'pgswap1')/(5*60))) as swapPerSec by interval         | chart max(poutPerSec) as PageOutsPerSec             max(swapPerSec) as SwapOutsPerSec by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval PageOutsPerSec=round(PageOutsPerSec,0)         | eval SwapOutsPerSec=round(SwapOutsPerSec,0)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Paging and Swapping</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">10</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+      <chart>
+        <title>Page Outs and Swap Outs Instance 3</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv | fields extracted_host, pgPageOut, pgSwapOut          | eval dbname=$dbname_$         | lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,            OUTPUT  dbname as dbname, instance as instance, instance_id as instance_id, source_host as hostx         | where hostx="$host_$" and instance_id=1         | bucket _time span=5m as interval         | stats earliest(pgPageOut) as pgout1 latest(pgPageOut) as pgout2 earliest(pgSwapOut) as pgswap1           latest(pgSwapOut) as pgswap2 by interval         | stats avg(eval(('pgout2'-'pgout1')/(5*60))) as poutPerSec            avg(eval(('pgswap2'-'pgswap1')/(5*60))) as swapPerSec by interval         | chart max(poutPerSec) as PageOutsPerSec             max(swapPerSec) as SwapOutsPerSec by interval         | eval interval=strftime(interval,"%d/%m/%Y %I:%M:%S %p")         | eval PageOutsPerSec=round(PageOutsPerSec,0)         | eval SwapOutsPerSec=round(SwapOutsPerSec,0)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">Paging and Swapping</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">10</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <html>
+      <label>PGA and SGA Memory Allocation</label>
+      <p>SGA memory is the big chunk of memory that Oracle uses for the sql shared_pool, data cache 
+        and other pools of shared resources. Processes share this memory. 
+   </p>
+   <p>
+        PGA memory is process private work area used mainly for sorts and hash joins.  
+        The amount of PGA memory allocated depends on the number of processes and the kind of work 
+        they are doing and its allocation size can vary widely as the work comes and goes in the database.
+        PGA size a process can use is a dynamic percentage of the PGA Aggregate Target.  
+        This size limitation can be overridden at the session level for example for a job with 
+        a huge sort by setting work_area_policy parameter to 'manual' and setting the *_area_size parameters
+        for the session.
+        
+   </p>
+    </html>
+  </row>
+  <row>
+    <panel depends="$p9_display$">
+      <chart>
+        <title>BASELINE: Database SGA and PGA Memory MB Utilized $dbname_$ Instance 1</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields dbname, total_PGA_allocated_bytes, sga_total_bytes, instance_id
+        | where  dbname="$dbname_$" AND instance_id=1
+        | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/1000000)
+        | timechart         
+        max(eval(total_PGA_allocated_bytes/1000000)) as TOTAL_PGA_MB                   
+        max(eval(sga_total_bytes/1000000)) as TOTAL_SGA_MB     MAX(SGA_PLUS_PGA_MB)
+        |eval TOTAL_PGA_MB = round(TOTAL_PGA_MB,0)
+        | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+      <chart>
+        <title>Database SGA and PGA Memory MB Utilized $dbname_$ Instance 1</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields dbname, total_PGA_allocated_bytes, sga_total_bytes, instance_id
+        | where  dbname="$dbname_$" AND instance_id=1
+        | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/1000000)
+        | timechart         
+        max(eval(total_PGA_allocated_bytes/1000000)) as TOTAL_PGA_MB                   
+        max(eval(sga_total_bytes/1000000)) as TOTAL_SGA_MB     MAX(SGA_PLUS_PGA_MB)
+        |eval TOTAL_PGA_MB = round(TOTAL_PGA_MB,0)
+        | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p10_display$">
+      <chart>
+        <title>BASELINE: Database SGA and PGA Memory MB Utilized $dbname_$ Instance 2</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields dbname, total_PGA_allocated_bytes, sga_total_bytes, instance_id
+        | where  dbname="$dbname_$" AND instance_id=2
+        | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/1000000)
+        | timechart        
+        max(eval(total_PGA_allocated_bytes/1000000)) as TOTAL_PGA_MB                   
+        max(eval(sga_total_bytes/1000000)) as TOTAL_SGA_MB     MAX(SGA_PLUS_PGA_MB)
+        |eval TOTAL_PGA_MB = round(TOTAL_PGA_MB,0)
+        | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+      <chart>
+        <title>Database SGA and PGA Memory MB Utilized $dbname_$ Instance 2</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields dbname, total_PGA_allocated_bytes, sga_total_bytes, instance_id
+        | where  dbname="$dbname_$" AND instance_id=2
+        | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/1000000)
+        | timechart        
+        max(eval(total_PGA_allocated_bytes/1000000)) as TOTAL_PGA_MB                   
+        max(eval(sga_total_bytes/1000000)) as TOTAL_SGA_MB     MAX(SGA_PLUS_PGA_MB)
+        |eval TOTAL_PGA_MB = round(TOTAL_PGA_MB,0)
+        | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p11_display$">
+      <chart>
+        <title>BASELINE: Database SGA and PGA Memory MB Utilized $dbname_$ Instance 3</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields dbname, total_PGA_allocated_bytes, sga_total_bytes, instance_id
+        | where  dbname="$dbname_$" AND instance_id=3
+        | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/1000000)
+        | timechart        
+        max(eval(total_PGA_allocated_bytes/1000000)) as TOTAL_PGA_MB                   
+        max(eval(sga_total_bytes/1000000)) as TOTAL_SGA_MB     MAX(SGA_PLUS_PGA_MB)
+        |eval TOTAL_PGA_MB = round(TOTAL_PGA_MB,0)
+        | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+      <chart>
+        <title>Database SGA and PGA Memory MB Utilized $dbname_$ Instance 3</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields dbname, total_PGA_allocated_bytes, sga_total_bytes, instance_id
+        | where  dbname="$dbname_$" AND instance_id=3
+        | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/1000000)
+        | timechart        
+        max(eval(total_PGA_allocated_bytes/1000000)) as TOTAL_PGA_MB                   
+        max(eval(sga_total_bytes/1000000)) as TOTAL_SGA_MB     MAX(SGA_PLUS_PGA_MB)
+        |eval TOTAL_PGA_MB = round(TOTAL_PGA_MB,0)
+        | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <table>
+      <searchString>index=database      
+        | eval Choices = "Click Here to Return To Performance Summary Page"
+        | head 1
+        | table Choices | rename Choices as "Return to Performance Summary:"</searchString>
+      <earliestTime>$earliest$</earliestTime>
+      <latestTime>$latest$</latestTime>
+      <drilldown target="newWindow">
+        <link>
+          <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_performance_summary?form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$&form.host_=$host_$]]>
+        </link>
+      </drilldown>
+    </table>
+  </row>
+</form>

@@ -1,0 +1,4 @@
+dbname, source_host,instance,instance_id
+DA1000,a1000p258,a1000p258,1
+DA1000,a1000p258,a1000p259,2
+DA1000,a1000p258,a1000p260,3

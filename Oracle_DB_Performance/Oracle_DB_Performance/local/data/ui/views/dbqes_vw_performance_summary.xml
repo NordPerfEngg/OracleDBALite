@@ -1,0 +1,2098 @@
+<form>
+  <label>Oracle DBALite Database Performance Summary</label>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="dropdown" submitButton="false" token="host_" searchWhenChanged="true">
+      <label>Select an environment</label>
+      <default>Pick an Environment</default>
+      <populatingSearch fieldForLabel="environment" fieldForValue="host">
+        <![CDATA[| inputlookup dbqes_lkp_host_dbname.csv ]]>
+      </populatingSearch>
+      <change>
+        <condition label="COM Prod">
+          <set token="dbname_">DA1000</set>
+          <set token="p4_display">true</set>
+          <set token="p5_display">true</set>
+          <set token="p6_display">true</set>
+        </condition>
+      </change>
+    </input>
+    <input type="time" searchWhenChanged="true" token="t1">
+      <label>Select time period</label>
+      <default>
+        <earliestTime>-1h@h</earliestTime>
+        <latestTime>now</latestTime>
+      </default>
+    </input>
+    <input type="time" searchWhenChanged="true" token="t2">
+      <label>Select time period for baselines</label>
+      <default>
+        <earliestTime>-1h@h</earliestTime>
+        <latestTime>now</latestTime>
+      </default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <html>
+     <p>
+       Select an environment and a date range for target and baseline graphs from the dropdowns.
+      </p>
+      <p>
+        This page is a high level overview of host cpu, memory and io and high resource consuming sqls.
+        There are links to other pages for further detail and investigation.</p>
+      <p>NOTE: Navigate to other pages through the links provided in the page instead of via the upper menu
+         and your settings will be carried forward.
+      </p>
+    </html>
+    </panel>
+  </row>
+ 
+  <row>
+    <panel depends="$p4_display$">
+      <table>
+        <title>Host Instance Map $host_$ $dbname_$</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat extracted_host=$host_$           |multikv         |fields extracted_host         |lookup lkp_dbd_instance_id2.csv source_host as extracted_host,          OUTPUT instances as instances, source_host as hostx          | where  hostx="$host_$"         | dedup instances         | table instances</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">cell</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Host CPU And RAM Resources - What $dbname_$ Sees</title>
+        <search>
+          <query>index=database sourcetype=om:oracle:osstat dbname=$dbname_$ |  fields PHYSICAL_MEMORY_BYTES,          instance_id, NUM_CPUS, NUM_CPU_CORES, NUM_CPU_SOCKETS           | stats last(eval(PHYSICAL_MEMORY_BYTES/(1024*1024*1024))) as GB_RAM  last(NUM_CPUS)           as "Num CPUs" last(NUM_CPU_CORES) as "CPU CORES" last(NUM_CPU_SOCKETS) as "CPU Sockets"  by instance_id          | eval GB_RAM=round(GB_RAM,0)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <searchString>index=database sourcetype=om:oracle:sysstat | head 1 | addinfo | convert ctime(info_min_time) | convert ctime(info_max_time) 
+       | eval BaselineTimerange=info_min_time." to ".info_max_time | head 1 |  table BaselineTimerange</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+      </table>
+    </panel>
+    <panel>
+      <table>
+        <searchString>index=database sourcetype=om:oracle:sysstat | head 1 |  addinfo | convert ctime(info_min_time) | convert ctime(info_max_time) 
+       | eval TargetTimerange=info_min_time." to ".info_max_time  | table TargetTimerange</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+      <h1>CPU statistics</h1>
+      <p>The CPU statistics are taken from unix_metrics splunk index.</p>
+    <p> CPU Load Avg is good if kept to 1 * the number of cores.  It can be a performance problem at 2* the number of cores.  
+      RAC systems should be kept well below 2 * the number of cores.</p>
+    <p>
+        <b>*** If cpu load average or utilization increases significantly and unexpectedly from the baseline, call it out.
+          Check the SQL Statistics section further down for 'SQL's by Total CPU Time' and include the top few in the
+          callout.
+    </b>
+    </p>
+  </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: CPU Load Average By Instance</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv         | fields extracted_host, loadAvg1mi         | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, source_host as hostx         |where hostx="$host_$"         | timechart avg(loadAvg1mi) as LoadAvg by instance         | eval LoadAvg=round(LoadAvg,1)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>CPU Load Average By Instance</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv         | fields extracted_host, loadAvg1mi         | eval dbname="$dbname_$"         |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, source_host as hostx         |where hostx="$host_$"         | timechart avg(loadAvg1mi) as LoadAvg by instance         | eval LoadAvg=round(LoadAvg,1)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+     <p>CPU Utilization for non-rac systems can spike to 100% briefly and not be a problem, 
+       though performance generally begins to degrade at around 75 to 80%.
+     For RAC systems, running at 100% cpu utilization for more than a few seconds can cause the 
+    node to be evicted from the cluster.</p>
+      <p>*** call it out if cpu utilization is above 75%.
+      </p>
+    </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: CPU Utilization By Instance</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait            |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, source_host as hostx         |where CPU="all" and hostx="$host_$"         | timechart avg(eval(pctUser + pctSystem)) by instance</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>CPU Utilization By Instance</title>
+        <search>
+          <query>index=unix_metrics sourcetype=cpu          | multikv         | fields CPU, extracted_host, pctUser, pctIdle, pctSystem, pctIowait            |lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host,          OUTPUT  dbname as dbname, instance as instance, source_host as hostx         |where CPU="all" and hostx="$host_$"         | timechart avg(eval(pctUser + pctSystem)) by instance</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <searchString>index=database      
+        | eval Choices = "Click Here to Investigate CPU Further"
+        | head 1
+        | table Choices | rename Choices as "For More CPU Info:"</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <drilldown target="newWindow">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_investigate_cpu_and_mem?form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$&form.host_=$host_$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+    <h1>MEMORY statistics</h1>
+      <p>The host memory statistics are taken from unix_metrics splunk index.</p>
+      <p>Virtual memory servers run with memory utilization near 100% because they use any available
+        RAM memory for caching, and relinquish it when needed.</p>
+      <p>However, if Host Swap Pct Utilized is over 75%, there is
+        likely to be significant performance degradation due to memory pressure.</p>
+      <p>
+        <b>*** Call it out if MemUsedPct is &gt; 85% or swapUsedPct is &gt; 70%.
+        </b>
+      </p>
+    </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: Host Memory %Utilized</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv           | fields extracted_host, memUsedPct, memFreePct, swapUsedPct         | lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host          OUTPUT  dbname as dbname, instance as instance, source_host as hostx                  | where hostx="$host_$"         | eval memUsedPlusFree=(memUsedPct+memFreePct)          | timechart avg(memUsedPct) as MemUsedPct, avg(memFreePct) as MemFreePct,          avg(memUsedAndFree) as MemUsedAndFree, avg(swapUsedPct) as SwapUsedPct by instance         | eval MemUsedPct=round(MemUsedPct,1)         | eval MemFreePct=round(MemFreePct,1)         | eval MemUsedAndFree = round(MemUsedAndFree,1)         | eval SwapUsedPct = round(SwapUsedPct,1)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">collapsed</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>Host Memory %Utilized</title>
+        <search>
+          <query>index=unix_metrics sourcetype=vmstat         | multikv           | fields extracted_host, memUsedPct, memFreePct, swapUsedPct         | lookup dbqes_lkp_dbd_instance_id3.csv instance as extracted_host          OUTPUT  dbname as dbname, instance as instance, source_host as hostx                  | where hostx="$host_$"         | eval memUsedPlusFree=(memUsedPct+memFreePct)          | timechart avg(memUsedPct) as MemUsedPct, avg(memFreePct) as MemFreePct,          avg(memUsedAndFree) as MemUsedAndFree, avg(swapUsedPct) as SwapUsedPct by instance         | eval MemUsedPct=round(MemUsedPct,1)         | eval MemFreePct=round(MemFreePct,1)         | eval MemUsedAndFree = round(MemUsedAndFree,1)         | eval SwapUsedPct = round(SwapUsedPct,1)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">collapsed</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY.maximumNumber">100</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+      <p>The sga and pga memory statistics are taken from the SPLUNK 'database' 
+        index and are sampled every 5 minutes.</p>
+      <p>SGA memory is the fundamental shared memory space that Oracle uses for the buffer cache,
+         shared sql area and other caches.  SGA doesn't generally change much over time unless the
+         dba adjusts it.  PGA memory is work area memory used mostly for sorts and hash joins.  
+         It's possible (though unusual) for PGA to expand to consume the available host memory.  If host memory 
+         is suddenly taxed check PGA memory utilization.  PGA is meant to be used, but if PGA 
+          memory utilization has suddenly increased  there may be a sql(s) needing to be 
+          optimized for large sorts or hash joins, may just be taking a bad plan 
+          or the server may need more memory for the new workload.</p>
+      <p>
+        <b>*** Call it out if TOTAL_PGA_ALLOC_MB is approaching PGA_AGGREGATE_TARGET_MB, as possibly
+            dba needs to increase PGA_AGGREGATE_TARGET or tune high-pga sql.
+            Check the SQL statistics section further down in this page to see top sqls
+            by pga memory utilization and include the top few in callout.</b>
+      </p>
+  </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE:  Database SGA and PGA Memory MB Utilized $dbname_$</title>
+        <search>
+          <query>index=database sourcetype=om:oracle:memory dbname=$dbname_$         | fields dbname, instance_id, aggregate_PGA_auto_target_bytes,               total_PGA_allocated_bytes, sga_total_bytes         | where  dbname="$dbname_$"         | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/(1024*2024))         | eval PGA_AGGREGATE_TARGET_MB=round(aggregate_PGA_auto_target_bytes/(1024*1024))         | eval TOTAL_PGA_ALLOC_MB=round(total_PGA_allocated_bytes/(1024*1024))         | eval PGA_REMAINING_MB=PGA_AGGREGATE_TARGET_MB-TOTAL_PGA_ALLOC_MB         | timechart                     max(TOTAL_PGA_ALLOC_MB) as TOTAL_PGA_ALLOC_MB         max(PGA_AGGREGATE_TARGET_MB) as PGA_AGGREGATE_TARGET_MB         max(PGA_REMAINING_MB) as PGA_REMAINING_MB         max(eval(sga_total_bytes/(1024*1024))) as TOTAL_SGA_MB MAX(SGA_PLUS_PGA_MB) AS SGA_PLUS_PGA_MB by instance_id         | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>Database SGA and PGA Memory MB Utilized $dbname_$</title>
+        <search>
+          <query>index=database sourcetype=om:oracle:memory dbname=$dbname_$         | fields dbname, instance_id, aggregate_PGA_auto_target_bytes,               total_PGA_allocated_bytes, sga_total_bytes         | where  dbname="$dbname_$"         | eval SGA_PLUS_PGA_MB=round((total_PGA_allocated_bytes + sga_total_bytes)/(1024*2024))         | eval PGA_AGGREGATE_TARGET_MB=round(aggregate_PGA_auto_target_bytes/(1024*1024))         | eval TOTAL_PGA_ALLOC_MB=round(total_PGA_allocated_bytes/(1024*1024))         | eval PGA_REMAINING_MB=PGA_AGGREGATE_TARGET_MB-TOTAL_PGA_ALLOC_MB         | timechart                     max(TOTAL_PGA_ALLOC_MB) as TOTAL_PGA_ALLOC_MB         max(PGA_AGGREGATE_TARGET_MB) as PGA_AGGREGATE_TARGET_MB         max(PGA_REMAINING_MB) as PGA_REMAINING_MB         max(eval(sga_total_bytes/(1024*1024))) as TOTAL_SGA_MB MAX(SGA_PLUS_PGA_MB) AS SGA_PLUS_PGA_MB by instance_id         | eval TOTAL_SGA_MB = round(TOTAL_SGA_MB,0)</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <searchString>index=database      
+        | eval Choices = "Click Here to Investigate Memory Further"
+        | head 1
+        | table Choices | rename Choices as "For More Memory Info:"</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <drilldown target="newWindow">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_investigate_cpu_and_mem?form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$&form.host_=$host_$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+    <h4>Blocking Locks</h4>
+      <p>The data is sampled every 5 minutes from v$lock and v$session.</p>
+      <p>  TotalWaitSeconds is the sum of seconds other sessions have been blocked by a sqlid at a given point in time.
+        </p>
+        <p>Locking in the db is necessary to control concurrency.  But when the locks are held too long, 
+          significant blocking and deadlocks of other sessions can occur. The info below helps determine
+          the sessions and sql_id's when significant blocking is occurring. </p>  
+      <p> There often are no deadlocks or significant blocking locks occurring in a database.  If the charts 
+        below report 'No Results Returned' it means no significant blocking was 
+      occurring during your search period.</p>
+      <p>
+        <b>  Call it out if TotalWaitSeconds for a sql increases significantly compared to the baseline.
+                 Use the Blocking Locks Tree to find the root blocking sql (if blocking sql_id 
+                 is null report prev_sql_id).  If you are in doubt, call it out for discussion.
+        </b>
+      </p>
+   </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: Blocking Summary - Blockers by SQL and Total Wait Seconds Caused</title>
+        <searchString>index=database sourcetype=om:oracle:locks dbname=$dbname_$ earliest=$t2.earliest$
+           latest=$t2.latest$
+        | fields SqlId, InstSid, BlkInstSid, Event, SecInWait, metric_date
+        | chart sum(SecInWait) as TotalWaitSeconds over metric_date by SqlId</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Blocking Summary - Blockers by SQL and Total Wait Seconds Caused</title>
+        <searchString>index=database sourcetype=om:oracle:locks dbname=$dbname_$ earliest=$t1.earliest$
+         latest=$t1.latest$
+        | fields SqlId, InstSid, BlkInstSid, Event, SecInWait, metric_date
+        | chart sum(SecInWait) as TotalWaitSeconds over metric_date by SqlId</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>BASELINE: Blocking Locks Tree</title>
+        <searchString>index=database sourcetype=om:oracle:locks dbname=$dbname_$
+        | fields metric_date, InstSid, BlkInstSid, ClientInfo, lock_seq, SecInWait, WaitClass, LogonTime, ObjName, 
+          SqlId, PrevSqlId, SqlStart
+        | eval BlkInstSid = if(BlkInstSid=="-", "rootBlkr", BlkInstSid)
+        | eval InstSid=InstSid
+        | table metric_date, InstSid , BlkInstSid , SecInWait, WaitClass,
+           ObjName, SqlId, PrevSqlId        
+        | sort -metric_date, lock_seq
+        | rename metric_date as Date | rename  BlkInstSid as BlockingInstSid</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="wrap">true</option>
+        <condition field="SqlId">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value2$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </condition>
+        <condition field="PrevSqlId">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value2$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </condition>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Blocking Locks Tree</title>
+        <searchString>index=database sourcetype=om:oracle:locks dbname=$dbname_$
+        | fields metric_date, InstSid, BlkInstSid, ClientInfo, lock_seq, SecInWait, WaitClass, LogonTime, ObjName, 
+          SqlId, PrevSqlId, SqlStart
+        | eval BlkInstSid = if(BlkInstSid=="-", "rootBlkr", BlkInstSid)
+        | eval InstSid=InstSid
+        | table metric_date, InstSid , BlkInstSid , SecInWait, WaitClass,
+           ObjName, SqlId, PrevSqlId       
+        | sort -metric_date, lock_seq
+        | rename metric_date as Date | rename  BlkInstSid as BlockingInstSid</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="wrap">true</option>
+        <drilldown target="My New Window">
+          <condition field="SqlId">
+            <link>
+              <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value2$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+            </link>
+          </condition>
+          <condition field="PrevSqlId">
+            <link>
+              <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value2$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+            </link>
+          </condition>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+    <h1>Deadlock statistics</h1> 
+      <p> A deadlock is when session A holds a lock on a resource session B needs while waiting for a lock that session
+          B holds.  Session B holds the lock session A needs and waits for the lock Session A holds. The waiting would
+          never end except that Oracle steps in and kills one of the sessions.  A few deadlocks is generally not a problem
+          but more than a few is bad for performance, can wreak havoc in the application and is generally a sign that
+          there's some other blocking locks, long running sqls, or application transaction design or 
+          thread configuration issue going on.
+      </p>
+      <p>
+        <b>*** Call it out if there is an increase in the number of deadlocks compared to the baseline.
+        </b>
+      </p>
+  </html>
+    </panel>
+  </row>
+  <row>
+    <panel depends="$p5_display$">
+      <html> 
+      <p> For COM, sustained deadlocks of 30 or more would be cause for concern.  A smaller number of deadlocks is normal
+          and a short spike in the deadlocks can be ignored.
+      </p>
+  </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: Database Deadlocks</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat dbname=$dbname_$            
+        | timechart sum(enqueue_deadlocks)</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>Database Deadlocks</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat dbname=$dbname_$            
+        | timechart sum(enqueue_deadlocks)</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+     <h4>Undo Utilization</h4>
+       <p>Shows undo utilization in GB for baseline and target time windows.  Chart shows them both together, while 
+         table has them in rows by time and window (target vs baseline as tgt vs BL).
+       </p>
+    <p>
+        <b>*** Call it out if UsedUndoGB approaches TotalUndoGB  or there is an unexplained 
+              increase in UsedUndoGB compared to baseline.
+    </b>
+      </p>
+       </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Undo Utilization - Total Undo File Space, Undo GB Used and UNDO GB Remaining</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$ undo_total_used_gb=*
+        | eval marker="Tgt"       
+        | fields undotbs*file_sp_gb, undo_total_used_gb, _time, marker, metric_date             
+        | eval sumFileSp=0| foreach undotbs*file_sp_gb<![CDATA[[ eval sumFileSp = sumFileSp + <<FIELD>>]]]>| append [search index = database sourcetype=om:oracle:sysstat dbname=$dbname_$
+               earliest=$t2.earliest$  latest=$t2.latest$ undo_total_used_gb=*
+           | eval marker="BL" 
+           | fields undotbs*file_sp_gb, undo_total_used_gb, _time, marker, metric_date]
+        | eval sumFileSp=0| foreach undotbs*file_sp_gb<![CDATA[[ eval sumFileSp = sumFileSp + <<FIELD>>]]]>| eval undo_total_used_gb = "0".undo_total_used_gb
+        | eval remainingUndoGB = sumFileSp-undo_total_used_gb
+        | chart max(sumFileSp) as TotalUndoGB max(undo_total_used_gb) as UsedUndoGB 
+           max(remainingUndoGB) as RemainingUndoGB over metric_date by marker
+        |eval RemainingUndoGB=round(RemainingUndoGB,6)
+        | eval UsedUndoGB=round(UsedUndoGB,6)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">line</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <table>
+        <title>Table of Undo Utilization -   Total Undo File Space, Undo GB Used and UNDO GB Remaining</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$ undo_total_used_gb=*
+        | eval marker="Tgt"       
+        | fields undotbs*file_sp_gb, undo_total_used_gb, _time, marker, metric_date             
+        | eval sumFileSp=0| foreach undotbs*file_sp_gb<![CDATA[[ eval sumFileSp = sumFileSp + <<FIELD>>]]]>| append [search index = database sourcetype=om:oracle:sysstat dbname=$dbname_$
+               earliest=$t2.earliest$  latest=$t2.latest$ undo_total_used_gb=*
+           | eval marker="BL" 
+           | fields undotbs*file_sp_gb, undo_total_used_gb, _time, marker, metric_date]
+        | eval sumFileSp=0| foreach undotbs*file_sp_gb<![CDATA[[ eval sumFileSp = sumFileSp + <<FIELD>>]]]>| eval undo_total_used_gb = "0".undo_total_used_gb
+        | eval remainingUndoGB = sumFileSp-undo_total_used_gb
+        | table marker, metric_date, sumFileSp, undo_total_used_gb 
+          remainingUndoGB by marker metric_date
+        | rename marker as "Window"
+        | rename sumFileSp as TotalUndoSpaceAvail
+        | rename undo_total_used_gb as UsedUndoGB</searchString>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Undo Applied for Consistent Reads (consistent changes)</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$ consistent_changes=*
+        | eval marker="Tgt"       
+        | fields consistent_changes _time, marker, metric_date             
+           | append [search index = database sourcetype=om:oracle:sysstat dbname=$dbname_$
+               earliest=$t2.earliest$  latest=$t2.latest$ consistent_changes=*
+           | eval marker="BL" 
+           | fields consistent_changes, _time, marker, metric_date]
+        | stats sum(consistent_changes) as consistent_changes 
+            by metric_date, marker
+        | chart max(consistent_changes) as consistent_changes 
+           over metric_date by marker</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">line</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+  <h1>IO Wait statistics</h1>
+      <p>The 'Database IO Waits' statistics are taken from the database v$system_events table and 
+        are sampled every 5 minutes.  The 'IOSTAT Waits' statistics are taken from the unix_metrics splunk
+        index.</p>
+      <p>Definitions: scattered_read=full table scan  sequential_read=single block read  direct_read=bypasses cache</p>
+      <p>Reasonable io duration for a database server is less than 10 ms for a single block sequential read, 
+        though some systems have lower baselines than 10 ms.</p>
+      <p>
+        <b>*** Call it out if io stats are significantly higher than baseline or single block sequential read is &gt; 15.
+                Check the 'SQL Statistics' section further down for 'TOP SQL's by Total Disk Reads' and include the top
+                few sqls in the callout.
+      </b>
+      </p>
+    </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: Database IO Waits $dbname_$</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat  dbname=$dbname_$
+        | eval scattered_read_ms = ( db_file_scattered_read_time_waited_micro/db_file_scattered_read_total_waits)/1000
+        | eval seq_read_ms = ( db_file_sequential_read_time_waited_micro/db_file_sequential_read_total_waits)/1000
+        | eval direct_read_ms = ( direct_path_read_time_waited_micro/ direct_path_read_total_waits )/1000
+        | timechart avg(scattered_read_ms) as Scatter_Read_ms, avg(seq_read_ms) as Seq_Read_ms, 
+        avg(direct_read_ms) as Direct_Read_ms
+        | eval Scatter_Read_ms = round(Scatter_Read_ms,1)
+        | eval Seq_Read_ms = round(Seq_Read_ms,1)
+        | eval Direct_Read_ms = round(Direct_Read_ms,1)</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>Database IO Waits $dbname_$</title>
+        <searchString>index=database sourcetype=om:oracle:sysstat  dbname=$dbname_$
+        | eval scattered_read_ms = ( db_file_scattered_read_time_waited_micro/db_file_scattered_read_total_waits)/1000
+        | eval seq_read_ms = ( db_file_sequential_read_time_waited_micro/db_file_sequential_read_total_waits)/1000
+        | eval direct_read_ms = ( direct_path_read_time_waited_micro/ direct_path_read_total_waits )/1000
+        | timechart avg(scattered_read_ms) as Scatter_Read_ms, avg(seq_read_ms) as Seq_Read_ms, 
+        avg(direct_read_ms) as Direct_Read_ms
+        | eval Scatter_Read_ms = round(Scatter_Read_ms,1)
+        | eval Seq_Read_ms = round(Seq_Read_ms,1)
+        | eval Direct_Read_ms = round(Direct_Read_ms,1)</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html> 
+        <p> IO can be further investigated by checking the oswatcher stats, usually located at
+          /db/oswatcher/oswbb/archive/oswiostat on the database server  (iostat history in text files).
+        </p>
+      </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE: IOSTAT IO Waits (in MS)</title>
+        <search>
+          <query>index=unix_metrics sourcetype=iostat extracted_host=$host_$ | multikv          | timechart max(avgSvcMillis), max(avgWaitMillis) by Device useother=f           |sort -max(avgWaitMillis) desc | head 10</query>
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">log</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>IOSTAT IO Waits (in MS)</title>
+        <search>
+          <query>index=unix_metrics sourcetype=iostat extracted_host=$host_$ | multikv          | timechart max(avgSvcMillis), max(avgWaitMillis) by Device useother=f           |sort -max(avgWaitMillis) desc | head 10</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">log</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisY2.enabled">false</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html> 
+        <h1> Top 10 Wait Events
+        </h1>
+        <p>Hover over the column to see the wait name
+        </p>
+        <p>Note:  The wait 'SQL Net Message From Client' is often the highest wait, but can generally be ignored.
+          Although it is classed as an idle event, it can sometimes indicate an issue  
+          at the application causing the application to process or wait too long before 
+          returning to the database. If there's a performance issue that can't be tied to any other waits or reasons 
+          and this wait is long, consider the possibility
+          that the problem actually is at the application layer.  So 'SQL Net Message from
+          Client' is the one idle event that is collected here.
+         <p>
+          <b>*** Call it out if top Wait Events are different than baseline  (for example top wait events
+              for baseline are cluster waits but top wait events for test are latch waits).
+         </b>
+        </p>
+        </p>
+      </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>BASELINE:  Top Wait Events(in seconds)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+        | fields application_wait_time cluster_wait_time user_io_wait_time concurrency_wait_time
+        | stats sum(application_wait_time) as Application_Wait_Time sum(cluster_wait_time) as Cluster_Wait_Time 
+                sum(user_io_wait_time) as User_IO_Wait_Time sum(concurrency_wait_time) as Concurrency_Wait_Time
+        | chart max(metric_date) max(Application_Wait_Time) as Application_Wait_Time max(Cluster_Wait_Time) as Cluster_Wait_Time
+           max(User_IO_Wait_Time) as User_IO_Wait_Time max(Concurrency_Wait_Time) as Concurrency_Wait_Time</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="charting.seriesColors">0xff0000</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top Wait Events(in Seconds)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+        | fields application_wait_time cluster_wait_time user_io_wait_time concurrency_wait_time
+        | stats sum(application_wait_time) as Application_Wait_Time sum(cluster_wait_time) as Cluster_Wait_Time 
+                sum(user_io_wait_time) as User_IO_Wait_Time sum(concurrency_wait_time) as Concurrency_Wait_Time
+        | chart max(metric_date) max(Application_Wait_Time) as Application_Wait_Time max(Cluster_Wait_Time) as Cluster_Wait_Time
+           max(User_IO_Wait_Time) as User_IO_Wait_Time max(Concurrency_Wait_Time) as Concurrency_Wait_Time</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+      <h2>SQL statistics $dbname_$</h2>
+      <h3>These stats are mostly used to find sqls contributing to resource consumption reported above in this report.
+          It is not necessary to examine every table below for each test.
+      </h3>
+      <p>
+        <b> *** Check the 'Top SQLS By Elapsed_time per Execution' and call out sqls that have increased
+        significantly in execution time.  If in doubt, call it out for discussion.</b>
+      </p>
+      <h4>Click the table row or chart to see run stats for the sql.</h4>
+      <p>Column names ending in *_BL are baseline values.</p>
+    <p> Due to the volatility of the active sql statistics in v$sql and v$sqlstat, 
+      these SQL statistics are taken from dba_hist_sqlstat (history stats).  
+      The most current stats are as old as the last AWR snapshot.  They are a sampled subset of the 
+      universe of sqls that run in the database.  Because of the sampling, the stats may be somewhat 
+      understated and less resource intensive sqls are not captured, as with the AWR reports.  </p>
+      <p> Only the top twenty resource intensive sqls for each of several performance categories are 
+        collected. </p>
+      <p>
+        <b>***When comparing to baseline, compare the per_execution statistics.
+      </b>
+      </p>
+     
+      </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>BASELINE: Table of Top SQLS by Total Wait Time (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$        
+        |fields snap_id, sql_id, time_waited, elapsed_time, application_wait_time, 
+        concurrency_wait_time, cluster_wait_time, user_io_wait_time, dbname                   
+        | join type=left max=1 sql_id,dbname [search index=database  sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | fields snap_id, sql_id, time_waited, sqltext, elapsed_time, application_wait_time, 
+           concurrency_wait_time, cluster_wait_time, user_io_wait_time,  dbname 
+        | eval tot_wait_time=application_wait_time + concurrency_wait_time + cluster_wait_time 
+           + user_io_wait_time  
+        | eval SQL=sql_id."-".substr(sqltext,1,50)
+        | stats sum(eval(application_wait_time/1000)) as app sum(eval(concurrency_wait_time/1000)) as conc 
+        sum(eval(cluster_wait_time/1000)) as clus sum(eval(user_io_wait_time/1000)) as io 
+         sum(eval(tot_wait_time/1000)) as total_wait by SQL 
+        | sort -total_wait | head 20
+        | eval app = round(app,0)
+        | eval conc = round(conc,0)
+        | eval clus = round(clus,0)
+        | eval io = round(io,0)
+        | eval plsql = round(plsql,0)
+        | eval java = round(java,0)
+        | eval total_wait = round(total_wait,0)</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Table of Top SQLS by Total Wait Time (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$        
+        |fields snap_id, sql_id, time_waited, elapsed_time, application_wait_time, 
+        concurrency_wait_time, cluster_wait_time, user_io_wait_time, dbname                   
+        | join type=left max=1 sql_id,dbname [search index=database  sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | fields snap_id, sql_id, time_waited, sqltext, elapsed_time, application_wait_time, 
+           concurrency_wait_time, cluster_wait_time, user_io_wait_time, dbname 
+        | eval tot_wait_time=application_wait_time + concurrency_wait_time + cluster_wait_time 
+           + user_io_wait_time  
+        | eval SQL=sql_id."-".substr(sqltext,1,50)
+        | stats sum(eval(application_wait_time/1000)) as app sum(eval(concurrency_wait_time/1000)) as conc 
+        sum(eval(cluster_wait_time/1000)) as clus sum(eval(user_io_wait_time/1000)) as io 
+         sum(eval(tot_wait_time/1000)) as total_wait by SQL
+        | eval app = round(app,0)
+        | eval conc = round(conc,0)
+        | eval clus = round(clus,0)
+        | eval io = round(io,0)
+        | eval plsql = round(plsql,0)
+        | eval java = round(java,0)
+        | sort -total_wait | head 20
+        | eval total_wait = round(total_wait,0)</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Total Elapsed Time</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, elapsed_time, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, elapsed_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, elapsed_time, dbname, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename elapsed_time as elapsed_time_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, elapsed_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, elapsed_time, elapsed_time_bl, 
+              executions, executions_bl
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(eval(elapsed_time/1000)) as Ela_Time_MS
+             sum(eval(elapsed_time_bl/1000)) as Ela_Time_MS_BL by  SQL
+          | sort -Ela_Time_MS| head 20
+           |chart max(Ela_Time_MS) max(Ela_Time_MS_BL) by SQL
+         | eval Ela_Time_MS=round(Ela_Time_MS)
+        | eval Ela_Time_MS_BL=round(Ela_Time_MS_BL)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Total Elapsed Time and their Elapsed Time per Execution</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, elapsed_time, executions, plan_hash_value, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, elapsed_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, elapsed_time, dbname, plan_hash_value, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename elapsed_time as elapsed_time_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, elapsed_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, elapsed_time_bl, executions_bl, elapsed_time, executions
+        |selfjoin sql_id keepsingle=true
+           | stats sum(executions) as Exec sum(eval(elapsed_time/1000)) as Elapsed_MS 
+           sum(eval(elapsed_time_bl/1000)) as Elapsed_MS_BL sum(executions_bl) as Exec_BL by SQL
+        | eval ela_MS_per_exec = Elapsed_MS/(Exec)
+        | eval ela_MS_per_exec_BL = Elapsed_MS_BL/(Exec)
+        | eval ela_MS_per_exec = round(ela_MS_per_exec,1)
+        | eval ela_MS_per_exec_BL = round(ela_MS_per_exec_BL,1)
+        | eval Elapsed_MS = round(Elapsed_MS,0)
+        | eval Elapsed_MS_BL = round(Elapsed_MS_BL,0)
+        | sort -Elapsed_MS | head 20          
+       | table Elapsed_MS,  Elapsed_MS_BL, ela_MS_per_exec, ela_MS_per_exec_BL, Exec,Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top SQLS By Elapsed_time per Execution (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, elapsed_time, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, elapsed_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, elapsed_time, dbname, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename elapsed_time as elapsed_time_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, elapsed_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, elapsed_time, elapsed_time_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(eval(elapsed_time/1000)) as Ela_Time_MS
+             sum(eval(elapsed_time_bl/1000)) as Ela_Time_MS_BL by  SQL
+        | eval  ela_MS_per_exec = Ela_Time_MS/Exec
+           | eval ela_MS_per_exec_bl = Ela_Time_MS_BL/Exec_BL
+          | sort -ela_MS_per_exec| head 20
+           |chart max(ela_MS_per_exec) max(ela_MS_per_exec_bl)  by SQL
+        | eval ela_MS_per_exec=round(ela_MS_per_exec,1)
+        | eval ela_MS_per_exec_bl=round(ela_MS_per_exec_bl,1)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top SQLS By Elapsed_time per Execution and their Total Elapsed Time (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, elapsed_time, executions, plan_hash_value, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, elapsed_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, elapsed_time, dbname, plan_hash_value, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename elapsed_time as elapsed_time_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, elapsed_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, elapsed_time_bl, executions_bl, elapsed_time, executions
+        |selfjoin sql_id keepsingle=true       
+           | stats sum(executions) as Exec sum(eval(elapsed_time/1000)) as Elapsed_MS 
+           sum(eval(elapsed_time_bl/1000)) as Elapsed_MS_BL sum(executions_bl) as Exec_BL by SQL
+        | eval ela_MS_per_exec = Elapsed_MS/(Exec)
+        | eval ela_MS_per_exec_BL = Elapsed_MS_BL/(Exec)
+        | eval ela_MS_per_exec = round(ela_MS_per_exec,1)
+        | eval ela_MS_per_exec_BL = round(ela_MS_per_exec_BL,1)
+        | eval Elapsed_MS = round(Elapsed_MS,0)
+        | eval Elapsed_MS_BL = round(Elapsed_MS_BL,0)
+        | sort -ela_MS_per_exec | head 20          
+
+           
+        | table Elapsed_MS,  Elapsed_MS_BL, ela_MS_per_exec, ela_MS_per_exec_BL, Exec,Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Total Executions (Sorted by target executions desc)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id,  dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id,  dbname, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id,  executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, executions, executions_bl
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL by  SQL
+           | sort -Exec | head 20
+           |chart max(Exec) max(Exec_BL) by SQL</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Executions (by target executions)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id,  executions, plan_hash_value, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id,  dbname, plan_hash_value, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id,  executions_bl, executions
+        |selfjoin sql_id keepsingle=true
+           | stats sum(executions) as Exec  sum(executions_bl) as Exec_BL by SQL
+        | sort -executions | head 20          
+       | table Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+      <chart>
+        <title>Top 20 SQLs by Total Executions (Sorted by baseline executions desc)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t2.earliest$  latest=$t2.latest$
+        | fields sql_id, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id,  dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75)
+        | rename executions as  executions_bl
+        | fields SQL, marker, sql_id,  dbname, executions_bl, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t1.earliest$ 
+           latest=$t1.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename executions_bl as executions
+           | fields SQL, marker_bl, sql_id,  executions]
+           | fields SQL, marker, marker_bl, sql_id, executions, executions_bl
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL by  SQL
+           | sort -Exec_BL | head 20
+           | chart max(Exec) max(Exec_BL) by SQL</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Executions (by baseline executions)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id,  executions, plan_hash_value, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id,  dbname, plan_hash_value, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id,  executions_bl, executions
+        |selfjoin sql_id keepsingle=true
+           | stats sum(executions) as Exec  sum(executions_bl) as Exec_BL by SQL
+        | sort -executions | head 20          
+       | table Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Total CPU Time (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, cpu_time, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, cpu_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, cpu_time, dbname, executions
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, dbname, sqltext | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename cpu_time as cpu_time_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, cpu_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, cpu_time, cpu_time_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true  
+        
+        | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(cpu_time) as sumCPUTime
+             sum(cpu_time_bl) as sumCPUTimeBL by  SQL
+        | eval sumCPUTimeMS = sumCPUTime/1000
+        | eval sumCPUTimeMSBL = sumCPUTimeBL/1000
+        | eval  cpu_MS_per_exec = sumCPUTimeMS/Exec
+        | eval cpu_MS_per_exec_bl = sumCPUTimeMSBL/Exec_BL
+        | sort -sumCPUTimeMS| head 20
+           |chart max(sumCPUTimeMS) max(sumCPUTimeMSBL)    by SQL
+          
+        | eval sumCPUTimeMS=round(sumCPUTimeMS,0)
+        | eval sumCPUTimeMSBL=round(sumCPUTimeMSBL,0)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Total CPU Time and their CPU per Execution (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, cpu_time, executions, plan_hash_value, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, cpu_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, cpu_time, dbname, executions
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename cpu_time as cpu_time_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, cpu_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, cpu_time, cpu_time_bl, executions, executions_bl
+        
+           |selfjoin sql_id keepsingle=true
+       
+           
+           | stats sum(executions) as Exec sum(cpu_time) as sumCPUTime 
+           sum(cpu_time_bl) as sumCPUTimeBL sum(executions_bl) as Exec_BL by SQL
+           | eval sumCPUTimeMS = sumCPUTime/1000
+           | eval sumCPUTimeMSBL = sumCPUTimeBL/1000
+        | eval CPU_MS_per_exec = sumCPUTimeMS/Exec
+           | eval CPU_MS_per_exec_BL = sumCPUTimeMSBL/Exec_BL
+        | eval CPU_MS_per_exec = round(CPU_MS_per_exec,1)
+        | eval CPU_MS_per_exec_BL = round(CPU_MS_per_exec_BL,1)
+        | eval sumCPUTimeMS = round(sumCPUTimeMS,0)
+        | eval sumCPUTimeMSBL = round(sumCPUTimeMSBL,0)
+        | sort -sumCPUTimeMS | head 20          
+
+           
+        | table sumCPUTimeMS,  sumCPUTimeMSBL, CPU_MS_per_exec, CPU_MS_per_exec_BL, Exec,Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by CPU per Execution (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, cpu_time, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, cpu_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, cpu_time, dbname, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename cpu_time as cpu_time_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, cpu_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, cpu_time, cpu_time_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(eval(cpu_time/1000)) as CPU_Time_MS
+             sum(eval(cpu_time_bl/1000)) as CPU_Time_MS_BL by  SQL
+        | eval  cpu_MS_per_exec = CPU_Time_MS/Exec
+           | eval cpu_MS_per_exec_bl = CPU_Time_MS_BL/Exec_BL
+          | sort -cpu_MS_per_exec| head 20
+           |chart max(cpu_MS_per_exec) max(cpu_MS_per_exec_bl) by SQL
+        | eval cpu_MS_per_exec=round(cpu_MS_per_exec,1)
+        | eval cpu_MS_per_exec_bl=round(cpu_MS_per_exec_bl,1)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by CPU per Execution and their Total CPU Time  (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, cpu_time, executions, plan_hash_value, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, cpu_time, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, cpu_time, dbname, plan_hash_value, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename cpu_time as cpu_time_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, cpu_time_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, cpu_time, cpu_time_bl, executions_bl,  executions
+        
+        |selfjoin sql_id keepsingle=true
+       
+           
+        | stats sum(executions) as Exec sum(cpu_time) as sumCPUTime 
+           sum(cpu_time_bl) as sumCPUTimeBL sum(executions_bl) as Exec_BL by SQL
+        | eval sumCPUTimeMS = sumCPUTime/1000
+        | eval sumCPUTimeMSBL = sumCPUTimeBL/1000
+        | eval CPU_MS_per_exec = sumCPUTimeMS/Exec
+        | eval CPU_MS_per_exec_BL = sumCPUTimeMSBL/Exec
+        | eval CPU_MS_per_exec = round(CPU_MS_per_exec,1)
+        | eval CPU_MS_per_exec_BL = round(CPU_MS_per_exec_BL,1)
+        | eval sumCPUTimeMS = round(sumCPUTimeMS,0)
+        | eval sumCPUTimeMSBL = round(sumCPUTimeMSBL,0)
+        | sort -CPU_MS_per_exec | head 20          
+
+           
+        | table CPU_MS_per_exec, CPU_MS_per_exec_BL, sumCPUTimeMS,  sumCPUTimeMSBL,  Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Buffer Gets</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, buffer_gets, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, buffer_gets, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, buffer_gets, dbname, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename buffer_gets as buffer_gets_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, buffer_gets_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, buffer_gets, buffer_gets_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(buffer_gets) as sumBufferGets
+             sum(buffer_gets_bl) as sumBufferGetsBL by  SQL
+        | eval  buffer_gets_per_exec = sumBufferGets/Exec
+           | eval buffer_gets_per_exec_bl = sumBufferGetsBL/Exec_BL
+          | sort -sumBufferGets| head 20
+           |chart max(sumBufferGets) max(sumBufferGetsBL) by SQL</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Buffer Gets and Their Buffer Gets per Execution  (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, buffer_gets, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, buffer_gets, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, buffer_gets, dbname,  executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename buffer_gets as buffer_gets_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, buffer_gets_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, buffer_gets, buffer_gets_bl, executions_bl,  executions
+        
+        |selfjoin sql_id keepsingle=true
+       
+        | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(buffer_gets) as sumBufferGets 
+           sum(buffer_gets_bl) as sumBufferGetsBL  by SQL
+        | eval buffer_gets_per_exec = sumBufferGets/Exec
+        | eval buffer_gets_per_exec_bl = sumBufferGetsBL/Exec_BL
+        | eval buffer_gets_per_exec = round(buffer_gets_per_exec,1)
+        | eval buffer_gets_per_exec_bl = round(buffer_gets_per_exec_bl,1)
+        
+        | sort -sumBufferGets | head 20          
+           
+        | table sumBufferGets, sumBufferGetsBL, buffer_gets_per_exec,  buffer_gets_per_exec_bl,  Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Buffer Gets  per Execution</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, buffer_gets, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, buffer_gets, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, buffer_gets, dbname, executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+           latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename buffer_gets as buffer_gets_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, buffer_gets_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, buffer_gets, buffer_gets_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true  
+           | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(buffer_gets) as sumBufferGets
+             sum(buffer_gets_bl) as sumBufferGetsBL by  SQL
+        | eval  buffer_gets_per_exec = sumBufferGets/Exec
+           | eval buffer_gets_per_exec_bl = sumBufferGetsBL/Exec_BL
+          | sort -buffer_gets_per_exec| head 20
+           |chart max(buffer_gets_per_exec)  max(buffer_gets_per_exec_bl) by SQL
+           | eval buffer_gets_per_exec=round(buffer_gets_per_exec,1)
+        | eval buffer_gets_per_exec_bl=round(buffer_gets_per_exec_bl,1)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Buffer Gets and Their Buffer Gets per Execution  (in MS)</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, buffer_gets, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, buffer_gets, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, buffer_gets, dbname,  executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename buffer_gets as buffer_gets_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, buffer_gets_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, buffer_gets, buffer_gets_bl, executions_bl,  executions
+        
+        |selfjoin sql_id keepsingle=true
+       
+        | stats sum(executions) as Exec sum(buffer_gets) as sumBufferGets 
+           sum(buffer_gets_bl) as sumBufferGetsBL sum(executions_bl) as Exec_BL by SQL
+        | eval buffer_gets_per_exec = sumBufferGets/(Exec)
+        | eval buffer_gets_per_exec_bl = sumBufferGetsBL/(Exec_BL)
+        | eval buffer_gets_per_exec = round(buffer_gets_per_exec,1)
+        | eval buffer_gets_per_exec_bl = round(buffer_gets_per_exec_bl,1)
+        
+        | sort -buffer_gets_per_exec | head 20          
+           
+        | table buffer_gets_per_exec, buffer_gets_per_exec_bl, sumBufferGets, sumBufferGetsBL  ,  Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Disk Reads</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, disk_reads, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, disk_reads, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, disk_reads, dbname, executions, metric_date, sqltext
+           
+           | append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename disk_reads as disk_reads_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, disk_reads_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, disk_reads, disk_reads_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true
+           
+        | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(disk_reads) as sumDiskReads
+          sum(disk_reads_bl) as sumDiskReadsBL by  SQL
+        | eval  disk_reads_per_exec = sumDiskReads/Exec
+        | eval disk_reads_per_exec_bl = sumDiskReadsBL/Exec_BL
+        | sort -sumDiskReads | head 20
+        |chart max(sumDiskReads)  max(sumDiskReadsBL) by SQL</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Disk Reads and Their Disk Reads per Execution</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, disk_reads, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, disk_reads, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, disk_reads, dbname,  executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename disk_reads as disk_reads_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, disk_reads_bl, executions_bl]
+        | fields SQL, marker, marker_bl, sql_id, disk_reads, disk_reads_bl, executions_bl,  executions
+        
+        |selfjoin sql_id keepsingle=true
+       
+        | stats sum(executions) as Exec sum(disk_reads) as sumDiskReads 
+           sum(disk_reads_bl) as sumDiskReadsBL sum(executions_bl) as Exec_BL by SQL
+        | eval disk_reads_per_exec = sumDiskReads/(Exec)
+        | eval disk_reads_per_exec_bl = sumDiskReadsBL/(Exec_BL)
+        | eval disk_reads_per_exec = round(disk_reads_per_exec,1)
+        | eval disk_reads_per_exec_bl = round(disk_reads_per_exec_bl,1)
+        
+        | sort -sumDiskReads | head 20          
+           
+        | table  sumDiskReads, sumDiskReadsBL, disk_reads_per_exec, disk_reads_per_exec_bl, Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <chart>
+        <title>Top 20 SQLs by Disk Reads per Execution</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, disk_reads, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, disk_reads, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+        | eval SQL=sql_id."-".substr(sqltext,1,75) 
+        | fields SQL, marker, sql_id, disk_reads, dbname, executions, metric_date, sqltext
+           
+           | append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker_bl="baseline_window"
+           | rename disk_reads as disk_reads_bl
+           | rename executions as executions_bl
+           | fields SQL, marker_bl, sql_id, disk_reads_bl, executions_bl]
+           | fields SQL, marker, marker_bl, sql_id, disk_reads, disk_reads_bl, 
+              executions, executions_bl
+           
+        |selfjoin sql_id keepsingle=true  
+        | stats sum(executions) as Exec sum(executions_bl) as Exec_BL sum(disk_reads) as sumDiskReads
+            sum(disk_reads_bl) as sumDiskReadsBL by  SQL
+        | eval  disk_reads_per_exec = sumDiskReads/Exec
+        | eval disk_reads_per_exec_bl = sumDiskReadsBL/Exec_BL
+        | sort -disk_reads_per_exec | head 20
+        |chart max(disk_reads_per_exec)  max(disk_reads_per_exec_bl) by SQL
+          
+        | eval disk_reads_per_exec=round(disk_reads_per_exec,0)
+        | eval disk_reads_per_exec_bl=round(disk_reads_per_exec_bl,0)</searchString>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$click.value$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </chart>
+      <table>
+        <title>Table of Top 20 SQLs by Disk Reads per Execution</title>
+        <searchString>index=database sourcetype=om:oracle:sql dbname=$dbname_$
+           earliest=$t1.earliest$  latest=$t1.latest$
+        | fields sql_id, disk_reads, executions, dbname
+        | eval marker="target_window" 
+        | fields marker, sql_id, disk_reads, dbname,  executions
+        | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+        | fields sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75) 
+           | fields SQL, marker, sql_id, disk_reads, dbname,  executions, metric_date, sqltext
+           
+           |  append [ search index=database sourcetype=om:oracle:sql dbname=$dbname_$  earliest=$t2.earliest$ 
+              latest=$t2.latest$
+           | join type=left max=1 sql_id, dbname [search index=database sourcetype=om:oracle:sqltext dbname=$dbname_$
+           | fields SQL, sql_id, sqltext, dbname | dedup sql_id]
+           | eval SQL=sql_id."-".substr(sqltext,1,75)
+           | eval marker="baseline_window"
+           | rename disk_reads as disk_reads_bl
+           | rename executions as executions_bl
+           | rename marker as marker_bl
+           | fields SQL, marker_bl, sql_id, disk_reads_bl, executions_bl]
+        | fields SQL, marker, marker_bl, sql_id, disk_reads, disk_reads_bl, executions_bl,  executions
+        
+        |selfjoin sql_id keepsingle=true
+       
+        | stats sum(executions) as Exec sum(disk_reads) as sumDiskReads 
+           sum(disk_reads_bl) as sumDiskReadsBL sum(executions_bl) as Exec_BL by SQL
+        | eval disk_reads_per_exec = sumDiskReads/(Exec)
+        | eval disk_reads_per_exec_bl = sumDiskReadsBL/(Exec_BL)
+        | eval disk_reads_per_exec = round(disk_reads_per_exec,1)
+        | eval disk_reads_per_exec_bl = round(disk_reads_per_exec_bl,1)
+        
+        | sort -disk_reads_per_exec | head 20          
+           
+        | table  disk_reads_per_exec, disk_reads_per_exec_bl, sumDiskReads, sumDiskReadsBL, Exec, Exec_BL, SQL</searchString>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <html>
+      <p>
+        <b>*** SQLs by PGA memory utilization:  If tempSegSizeBytes&gt;0 then sort/hash has spilled to disk.  
+        If numberPasses&gt;1 then this is a suboptimal multipass pga operation and needs to be called out.
+        </b>
+      </p>
+    </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Baseline: Top SQLs by PGA Memory Utilization</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields metric_date, instance_id, workareaOpType, execPlanLine, activeSeconds,
+             actualMemUsedKB, maxMemUsedKB, workAreaSizeKB, numberPasses, tempSegSizeBytes,
+             sql_id, sqltext
+        | eval SQL=sql_id."-".substr(sqltext,1,75)
+        | table metric_date, workAreaSizeKB,  maxMemUsedKB, workareaOpType, SQL, instance_id,execPlanLine,activeSeconds,
+            actualMemUsedKB,     numberPasses, tempSegSizeBytes
+            
+        | sort -workAreaSizeKB, metric_date 
+        | rename metric_date as Date | rename  BlkInstSid as BlockingInstSid</searchString>
+        <earliestTime>$t2.earliest$</earliestTime>
+        <latestTime>$t2.latest$</latestTime>
+        <option name="wrap">true</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <table>
+        <title>Top SQLs by PGA Memory Utilization</title>
+        <searchString>index=database sourcetype=om:oracle:memory dbname=$dbname_$
+        | fields metric_date, instance_id, workareaOpType, execPlanLine, activeSeconds,
+             actualMemUsedKB, maxMemUsedKB, workAreaSizeKB, numberPasses, tempSegSizeBytes,
+             sql_id, sqltext
+        | eval SQL=sql_id."-".substr(sqltext,1,75)
+        | table metric_date, workAreaSizeKB,  maxMemUsedKB, workareaOpType, SQL, instance_id,execPlanLine,activeSeconds,
+            actualMemUsedKB,     numberPasses, tempSegSizeBytes
+        | sort -workAreaSizeKB, metric_date 
+        | rename metric_date as Date | rename  BlkInstSid as BlockingInstSid</searchString>
+        <earliestTime>$t1.earliest$</earliestTime>
+        <latestTime>$t1.latest$</latestTime>
+        <option name="wrap">true</option>
+        <drilldown target="My New Window">
+          <link>
+            <![CDATA[/app/Oracle_DB_Performance/dbqes_vw_sql?form.sql=$row.SQL$&form.dbname_=$dbname_$&form.t1.earliest=$t1.earliest$&form.t1.latest=$t1.latest$&form.t2.earliest=$t2.earliest$&form.t2.latest=$t2.latest$]]>
+          </link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+</form>

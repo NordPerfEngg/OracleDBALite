@@ -1,0 +1,9 @@
+<nav search_view="search" color="#30D8E8">
+  <view name="search"/>
+  <collection label="Summary">
+	<view source="unclassified" match="dbqes_vw_performance_" />
+  </collection> 
+  <collection label="Investigate">
+	<view source="unclassified" match="dbqes_vw_investigate_" />
+  </collection>
+</nav>

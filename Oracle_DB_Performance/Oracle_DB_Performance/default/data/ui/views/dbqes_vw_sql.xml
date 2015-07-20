@@ -1,0 +1,178 @@
+<form>
+  <label>SQL Text and Run Stats</label>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="text" token="sql" searchWhenChanged="true">
+      <label>Sql_Id</label>
+    </input>
+    <input type="text" token="dbname_" searchWhenChanged="true">
+      <label>Database Name</label>
+    </input>
+    <input type="time" token="t1" searchWhenChanged="true">
+      <label>Target Time Range</label>
+    </input>
+    <input type="time" token="t2" searchWhenChanged="true">
+      <label>Baseline Time Range</label>
+    </input>
+  </fieldset>
+<row>
+    <html>
+    <p>Splunk only stores 1000 characters of the sql text.  If the full text does not display here 
+      and you need the full text, you'll need to get it from the database in v$sql or dba_hist_sqltext
+      or from an awr report from the time period you've chosen.
+      </p>
+  </html>
+  </row>
+      
+  <row>
+      <table>
+        <search>
+          <query>index = database sourcetype=om:oracle:sqltext
+            | eval temp=split("$sql$","-") | eval sqln=mvindex(temp,0)
+            | where sql_id=sqln
+            | dedup sql_id
+            | table sql_id sqltext</query>
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+      </table>
+  </row>
+    <row>
+      <table>
+        <title> Baseline Window Run Statistics</title>
+        <search>
+          <query> index=database sourcetype=om:oracle:sql  dbname=$dbname_$ earliest=$t2.earliest$ latest=$t2.latest$ 
+            | eval temp=split("$sql$","-") | eval sqln=mvindex(temp,0)
+            | where sql_id=sqln 
+        | eval marker="target_window" 
+            |stats sum(elapsed_time) as ela_micro sum(executions) as exec sum(cpu_time) as cpu_micro
+                    sum(cluster_wait_time) as clu_micro sum(user_io_wait_time) as io_micro
+                    sum(application_wait_time) as app_wait_micro
+                    sum(plsql_exec_time) as plsql_micro
+                    sum(java_exec_time) as java_micro sum(sorts) as sorts_tot sum(parse_calls) as parse_tot
+                    sum(disk_reads) as disk_reads_tot sum(direct_writes) as dir_writes_tot 
+                    sum(buffer_gets) as buffer_gets_tot sum(rows_processed) as rows_processed_tot 
+                    sum(fetches) as fetches_tot
+                    sum(loads) as loads_tot sum(invalidations) as invalidations_tot
+                    by sql_id plan_hash_value
+            | eval elapsed_ms = ela_micro/1000
+            | eval elapsed_ms_per_exec = (ela_micro/1000)/exec
+            | eval cpu_ms = cpu_micro/1000
+            | eval cpu_ms_per_exec = (cpu_micro/1000)/exec
+            | eval cluster_wait_ms = clu_micro/1000
+            | eval cluster_wait_ms_per_exec = (clu_micro/1000)/exec
+            | eval io_wait_ms = io_micro/1000
+            | eval io_wait_ms_per_exec = (io_micro/1000)/exec
+            | eval application_wait_ms = app_wait_micro/1000
+            | eval application_wait_ms_per_exec = (app_wait_micro/1000)/exec
+            | eval plsql_exec_ms = plsql_micro/1000
+            | eval plsql_exec_ms_per_exec = (plsql_micro/1000)/exec
+            | eval java_exec_ms = java_micro/1000
+            | eval java_exec_ms_per_exec = (java_micro/1000)/exec
+            | eval sorts_per_exec = sorts_tot/exec
+            | eval disk_reads_per_exec = disk_reads_tot/exec
+            | eval buffer_gets_per_exec = buffer_gets_tot/exec
+            | eval rows_processes_per_exec = rows_processed_tot/exec
+            | eval fetches_per_exec = fetches_tot/exec
+            | table 
+                    plan_hash_value
+                    exec
+                    elapsed_ms elapsed_ms_per_exec 
+                    cpu_ms cpu_ms_per_exec 
+                    cluster_wait_ms cluster_wait_ms_per_exec
+                    io_wait_ms io_wait_ms_per_exec
+                    application_wait_ms application_wait_ms_per_exec
+                    plsql_exec_ms plsql_exec_ms_per_exec
+                    java_exec_ms java_exec_ms_per_exec
+                    sorts_tot sorts_per_exec
+                    buffer_gets_tot buffer_gets_per_exec
+                    disk_reads_tot disk_reads_per_exec
+                    rows_processed_tot rows_processes_per_exec
+                    fetches_tot fetches_per_exec
+                    parse_tot
+                    loads_tot
+                    invalidations_tot
+            | rename exec as executions
+            | transpose
+            
+            | rename column as RUN_STAT | rename "row 1" as row1
+            | eval row1=round(row1,0)
+            
+           </query>
+          
+          <earliest>$t2.earliest$</earliest>
+          <latest>$t2.latest$</latest>
+        </search>
+      </table>  
+
+ 
+
+      <table>
+        <title> Target Window Run Statistics</title>
+        <search>
+          <query> index=database sourcetype=om:oracle:sql  dbname=$dbname_$ earliest=$t1.earliest$ latest=$t1.latest$ 
+            | eval temp=split("$sql$","-") | eval sqln=mvindex(temp,0)
+            | where sql_id=sqln 
+        | eval marker="target_window" 
+            |stats sum(elapsed_time) as ela_micro sum(executions) as exec sum(cpu_time) as cpu_micro
+                    sum(cluster_wait_time) as clu_micro sum(user_io_wait_time) as io_micro
+                    sum(application_wait_time) as app_wait_micro
+                    sum(plsql_exec_time) as plsql_micro
+                    sum(java_exec_time) as java_micro sum(sorts) as sorts_tot sum(parse_calls) as parse_tot
+                    sum(disk_reads) as disk_reads_tot sum(direct_writes) as dir_writes_tot 
+                    sum(buffer_gets) as buffer_gets_tot sum(rows_processed) as rows_processed_tot 
+                    sum(fetches) as fetches_tot
+                    sum(loads) as loads_tot sum(invalidations) as invalidations_tot
+                    by sql_id plan_hash_value
+            | eval elapsed_ms = ela_micro/1000
+            | eval elapsed_ms_per_exec = (ela_micro/1000)/exec
+            | eval cpu_ms = cpu_micro/1000
+            | eval cpu_ms_per_exec = (cpu_micro/1000)/exec
+            | eval cluster_wait_ms = clu_micro/1000
+            | eval cluster_wait_ms_per_exec = (clu_micro/1000)/exec
+            | eval io_wait_ms = io_micro/1000
+            | eval io_wait_ms_per_exec = (io_micro/1000)/exec
+            | eval application_wait_ms = app_wait_micro/1000
+            | eval application_wait_ms_per_exec = (app_wait_micro/1000)/exec
+            | eval plsql_exec_ms = plsql_micro/1000
+            | eval plsql_exec_ms_per_exec = (plsql_micro/1000)/exec
+            | eval java_exec_ms = java_micro/1000
+            | eval java_exec_ms_per_exec = (java_micro/1000)/exec
+            | eval sorts_per_exec = sorts_tot/exec
+            | eval disk_reads_per_exec = disk_reads_tot/exec
+            | eval buffer_gets_per_exec = buffer_gets_tot/exec
+            | eval rows_processes_per_exec = rows_processed_tot/exec
+            | eval fetches_per_exec = fetches_tot/exec
+            | table 
+                    plan_hash_value
+                    exec
+                    elapsed_ms elapsed_ms_per_exec 
+                    cpu_ms cpu_ms_per_exec 
+                    cluster_wait_ms cluster_wait_ms_per_exec
+                    io_wait_ms io_wait_ms_per_exec
+                    application_wait_ms application_wait_ms_per_exec
+                    plsql_exec_ms plsql_exec_ms_per_exec
+                    java_exec_ms java_exec_ms_per_exec
+                    sorts_tot sorts_per_exec
+                    buffer_gets_tot buffer_gets_per_exec
+                    disk_reads_tot disk_reads_per_exec
+                    rows_processed_tot rows_processes_per_exec
+                    fetches_tot fetches_per_exec
+                    parse_tot
+                    loads_tot
+                    invalidations_tot
+            | rename exec as executions
+            | transpose
+            
+            | rename column as RUN_STAT | rename "row 1" as row1
+            | eval row1=round(row1,0)
+            
+           </query>
+          
+          <earliest>$t1.earliest$</earliest>
+          <latest>$t1.latest$</latest>
+        </search>
+      </table>  
+
+  </row>
+  
+</form>

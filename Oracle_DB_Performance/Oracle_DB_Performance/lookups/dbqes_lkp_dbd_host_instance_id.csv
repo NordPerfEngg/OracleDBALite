@@ -1,0 +1,4 @@
+instance_id,host,master_host
+a1000p258_node_1,a1000p258,a1000p258
+a1000p259_node_2,a1000p259,a1000p258
+a1000p260_node_3,a1000p260,a1000p258

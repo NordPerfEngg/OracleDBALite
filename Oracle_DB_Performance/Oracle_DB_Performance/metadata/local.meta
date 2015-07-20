@@ -1,0 +1,76 @@
+[indexes/database]
+owner = admin
+version = 6.2.4
+modtime = 1437202506.195372500
+
+[props/om%3Aoracle%3Alocks]
+owner = admin
+version = 6.2.4
+modtime = 1437203536.651932700
+
+[props/om%3Aoracle%3Amemory]
+owner = admin
+version = 6.2.4
+modtime = 1437204182.604470700
+
+[props/om%3Aoracle%3Aosstat]
+owner = admin
+version = 6.2.4
+modtime = 1437204279.184351100
+
+[props/om%3Aoracle%3Asysstat]
+owner = admin
+version = 6.2.4
+modtime = 1437204415.279420700
+
+[props/om%3Aoracle%3Asql]
+owner = admin
+version = 6.2.4
+modtime = 1437204564.490228300
+
+[props/om%3Aoracle%3Asqltext]
+owner = admin
+version = 6.2.4
+modtime = 1437204796.577265100
+
+[views/dbqes_vw_performance_summary]
+version = 6.2.4
+modtime = 1437246671.128594100
+
+[props/cpu]
+owner = admin
+version = 6.2.4
+modtime = 1437214349.503653700
+
+[transforms/dbqes_lkp_dbd_instance_id3.csv]
+access = read : [ * ], write : [ * ]
+export = none
+owner = admin
+version = 6.2.4
+modtime = 1437216328.731996900
+
+[props/vmstat]
+owner = admin
+version = 6.2.4
+modtime = 1437218140.344528900
+
+[props/vmstats]
+owner = admin
+version = 6.2.4
+modtime = 1437218130.685954900
+
+[props/iostat]
+owner = admin
+version = 6.2.4
+modtime = 1437219274.892976700
+
+[views/dbqes_vw_investigate_cpu_and_mem]
+version = 6.2.4
+modtime = 1437238390.434651100
+
+[lookups/lkp_dbd_instance_id2.csv]
+access = read : [ * ], write : [ * ]
+export = none
+owner = admin
+version = 6.2.4
+modtime = 1437239360.242398100
